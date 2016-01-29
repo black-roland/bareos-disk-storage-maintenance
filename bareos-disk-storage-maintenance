@@ -2,15 +2,41 @@
 
 set -e
 
-# Usage:
-# bareos-volumes-maintenance /var/lib/bareos/storage-local
+# Parse arguments
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -e | --rsh)
+      shift
+      REMOTE_SHELL="$1"
+      ;;
+    -p | --volumes-path)
+      shift
+      VOLUMES_PATH="$1"
+      ;;
+    *)
+      echo "Unknown argument: $1"
+      echo
+      echo "Usage: $0 -e 'ssh bareos@bareos-sd.example.com' -p '/var/lib/bareos/storage'"
+      exit 1
+      ;;
+  esac
+  shift
+done
 
-VOLUMES_PATH="$1"
+# Default values
+REMOTE_SHELL="${REMOTE_SHELL:-bash -c}"
+VOLUMES_PATH="${VOLUMES_PATH:-/var/lib/bareos/storage}"
+
+print_options() {
+  echo "Remote/local shell:          ${REMOTE_SHELL}"
+  echo "Bareos storage volumes path: ${VOLUMES_PATH}"
+  echo
+}
 
 prune_all() {
   echo 'Pruning volumes...'
 
-  FILES=`ls -1 "${VOLUMES_PATH}" | grep -E -v '\.bsr$'`
+  FILES=`${REMOTE_SHELL} "ls -1 '${VOLUMES_PATH}' | grep -E -v '\.bsr$'"`
 
   for VOLUME in $FILES; do
     bconsole <<< "prune volume=${VOLUME} yes" > /dev/null
@@ -32,7 +58,7 @@ delete_purged() {
 delete_obsolete() {
   echo 'Deleting obsolete volume files...'
 
-  FILES=`ls -1 "${VOLUMES_PATH}" | grep -E -v '\.bsr$'`
+  FILES=`${REMOTE_SHELL} "ls -1 '${VOLUMES_PATH}' | grep -E -v '\.bsr$'"`
 
   for VOLUME in $FILES; do
     if bconsole <<< "list volume=${VOLUME}" | grep -q 'No results to list'; then
@@ -41,10 +67,11 @@ delete_obsolete() {
   done
 
   echo "Obsolete volume files: `echo ${OBSOLETE} | xargs`"
- 
-  echo "${OBSOLETE}" | xargs -I '{}' rm -f "${VOLUMES_PATH}/{}"
+
+  echo "${OBSOLETE}" | xargs -I '{}' ${REMOTE_SHELL} "rm -f ${VOLUMES_PATH}/{}"
 }
 
+print_options
 prune_all
 delete_purged
 delete_obsolete
